@@ -141,6 +141,8 @@ class ManagementViewController: NXUITableViewController {
                     tableViewCell.textLabel?.textColor = .secondaryLabel
                     tableViewCell.selectionStyle = .none
                 }
+            default:
+                break
         }
         
         return tableViewCell
@@ -358,6 +360,8 @@ class ManagementViewController: NXUITableViewController {
                     }
                 }
             }
+        default:
+            break
         }
         tableView.deselectRow(at: indexPath, animated: true)
     }
