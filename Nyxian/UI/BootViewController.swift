@@ -1624,6 +1624,12 @@ class BootViewController: UIViewController {
                         slotDidAppear?()
                     }
                 }
+                
+                // Bootstrap is over and the slot UI owns the screen: bring up
+                // the MCP server (honouring the user's toggle) so a remote
+                // OpenCode session can reach this device over Tailscale while
+                // Nyxian stays in the foreground.
+                NXMCPServer.shared.startIfEnabled()
             }
         }
     }

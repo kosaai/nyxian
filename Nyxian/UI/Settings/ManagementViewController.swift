@@ -21,6 +21,20 @@
 */
 
 import UIKit
+import Security
+
+/// Textual contract shared with NXMCPServer (app target). The two targets
+/// compile independently — no imports possible — so the strings are
+/// duplicated verbatim. Keep in sync with the copy in NXMCPServer.swift.
+private enum NXMCPContract {
+    static let enabledKey = "NXMCPServer.Enabled"
+    static let runningKey = "NXMCPServer.Running"
+    static let enabledChangedNotification = "NXMCPServerEnabledChanged"
+    static let stateChangedNotification = "NXMCPServerStateChanged"
+    static let keychainService = "app.nyxian.mcp-server"
+    static let keychainAccount = "auth-token"
+    static let port = 8377
+}
 
 class NXManagementUISingleFlight {
     private static let slot = DispatchSemaphore(value: 1)
@@ -41,10 +55,16 @@ class ManagementViewController: NXUITableViewController {
         super.viewDidLoad()
         title = "Management"
         view.backgroundColor = .systemBackground
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mcpServerStateChanged),
+            name: Notification.Name(NXMCPContract.stateChangedNotification),
+            object: nil
+        )
     }
     
     override func numberOfSections(in tableView: UITableView) -> Int {
-        return 4
+        return 5
     }
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -55,8 +75,10 @@ class ManagementViewController: NXUITableViewController {
                 return 1
             case 2:
                 return 2
-            default:
+            case 3:
                 return 6
+            default:
+                return 4
         }
     }
     
@@ -78,7 +100,7 @@ class ManagementViewController: NXUITableViewController {
                     tableViewCell.textLabel?.text = "Installed KEXTs"
                     tableViewCell.accessoryType = .disclosureIndicator
                 }
-            default:
+            case 3:
                 if indexPath.row == 0 {
                     tableViewCell.textLabel?.text = "Clear IconCache"
                 } else if indexPath.row == 1 {
@@ -94,6 +116,30 @@ class ManagementViewController: NXUITableViewController {
                 } else if indexPath.row == 5 {
                     tableViewCell.textLabel?.text = "Restore Everything"
                     tableViewCell.textLabel?.textColor = .systemRed
+                }
+            case 4:
+                if indexPath.row == 0 {
+                    let enabled = UserDefaults.standard.object(forKey: NXMCPContract.enabledKey) as? Bool ?? true
+                    tableViewCell.textLabel?.text = "MCP Server"
+                    let toggle = UISwitch()
+                    toggle.isOn = enabled
+                    toggle.addTarget(self, action: #selector(mcpServerToggleChanged(_:)), for: .valueChanged)
+                    tableViewCell.accessoryView = toggle
+                } else if indexPath.row == 1 {
+                    let running = UserDefaults.standard.bool(forKey: NXMCPContract.runningKey)
+                    tableViewCell.textLabel?.text = running ? "Status: Running" : "Status: Stopped"
+                    tableViewCell.textLabel?.textColor = running ? .systemGreen : .secondaryLabel
+                    tableViewCell.selectionStyle = .none
+                } else if indexPath.row == 2 {
+                    tableViewCell.textLabel?.text = "Port: \(NXMCPContract.port)"
+                    tableViewCell.selectionStyle = .none
+                } else if let token = mcpServerToken(), !token.isEmpty {
+                    let prefix = String(token.prefix(8))
+                    tableViewCell.textLabel?.text = "Token: \(prefix)… (tap to copy)"
+                } else {
+                    tableViewCell.textLabel?.text = "Token: unavailable"
+                    tableViewCell.textLabel?.textColor = .secondaryLabel
+                    tableViewCell.selectionStyle = .none
                 }
         }
         
@@ -112,7 +158,7 @@ class ManagementViewController: NXUITableViewController {
             } else {
                 navigationController?.pushViewController(KEXTManagementViewController(style: .insetGrouped), animated: true)
             }
-        default:
+        case 3:
             if indexPath.row == 0 {
                 ProjectTableCell.iconCache.removeAllObjects()
             } else if indexPath.row == 1 {
@@ -301,7 +347,55 @@ class ManagementViewController: NXUITableViewController {
                 
                 self.present(alert, animated: true)
             }
+        case 4:
+            if indexPath.row == 3, let token = mcpServerToken(), !token.isEmpty {
+                UIPasteboard.general.string = token
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                if let cell = tableView.cellForRow(at: indexPath) {
+                    cell.accessoryType = .checkmark
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        cell.accessoryType = .disclosureIndicator
+                    }
+                }
+            }
         }
         tableView.deselectRow(at: indexPath, animated: true)
+    }
+    
+    // MARK: - MCP server settings (section 4)
+    
+    /// Settings toggle: persists the user's choice and notifies the server,
+    /// which starts or stops itself on its own queue.
+    @objc private func mcpServerToggleChanged(_ sender: UISwitch) {
+        UserDefaults.standard.set(sender.isOn, forKey: NXMCPContract.enabledKey)
+        NotificationCenter.default.post(
+            name: Notification.Name(NXMCPContract.enabledChangedNotification),
+            object: nil
+        )
+    }
+    
+    /// Server posts this on main whenever the listener's state flips.
+    @objc private func mcpServerStateChanged() {
+        if tableView.numberOfSections > 4 {
+            tableView.reloadSections(IndexSet(integer: 4), with: .none)
+        }
+    }
+    
+    /// Reads the Bearer token straight from the Keychain using the shared
+    /// contract — no reference to NXMCPServer (different target).
+    private func mcpServerToken() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: NXMCPContract.keychainService,
+            kSecAttrAccount as String: NXMCPContract.keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }
