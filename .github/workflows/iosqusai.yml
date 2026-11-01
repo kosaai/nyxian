@@ -42,6 +42,30 @@ jobs:
           brew update
           brew install pkgconf cmake libarchive dpkg openssl ninja ldid
 
+      - name: Cache LLVM-On-iOS sources & build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            LLVM-On-iOS/swift
+            LLVM-On-iOS/llvm-project
+            LLVM-On-iOS/build/LLVMClangSwift_iphoneos
+            LLVM-On-iOS/LLVM.xcframework
+            LLVM-On-iOS/CoreCompilerSupportLibs
+            LLVM-On-iOS/.SwiftToolchain-iphoneos
+            LLVM-On-iOS/SwiftToolchain-iphoneos
+            LLVM-On-iOS/SwiftToolchain.zip
+          key: llvm-ios-${{ runner.os }}-${{ hashFiles('LLVM-On-iOS/Makefile', 'LLVM-On-iOS/Scripts/build-swift-toolchain.sh') }}-${{ github.sha }}
+          restore-keys: |
+            llvm-ios-${{ runner.os }}-${{ hashFiles('LLVM-On-iOS/Makefile', 'LLVM-On-iOS/Scripts/build-swift-toolchain.sh') }}-
+
+      - name: Cache Frameworks/CoreCompiler
+        uses: actions/cache@v4
+        with:
+          path: Frameworks/CoreCompiler/CoreCompilerSupportLibs
+          key: corecompiler-${{ runner.os }}-${{ hashFiles('LLVM-On-iOS/Makefile') }}-${{ github.sha }}
+          restore-keys: |
+            corecompiler-${{ runner.os }}-${{ hashFiles('LLVM-On-iOS/Makefile') }}-
+
       - name: Verify submodules
         shell: bash
         run: |
